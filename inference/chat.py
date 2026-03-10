@@ -65,11 +65,12 @@ def generate_transformers(model, tokenizer, messages: list, max_new_tokens: int 
     """使用transformers生成回复"""
     import torch
 
-    # 构建对话prompt（Qwen3格式）
+    # 构建对话prompt（Qwen3格式，禁用thinking避免输出<think>标签）
     prompt = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
-        add_generation_prompt=True
+        add_generation_prompt=True,
+        enable_thinking=False
     )
 
     inputs = tokenizer(prompt, return_tensors="pt")
