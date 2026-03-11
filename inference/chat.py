@@ -7,8 +7,46 @@
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
+
+# 配置文件搜索路径（优先级从高到低）
+CONFIG_SEARCH_PATHS = [
+    "data/config.json",           # 项目根目录下的配置
+    "../data/config.json",        # 从 inference/ 目录运行时
+]
+
+
+def load_system_prompt(lora_path: str = None) -> str:
+    """
+    按优先级加载 system prompt：
+    1. LoRA 目录中的 config_chat.json（训练时保存的副本）
+    2. data/config.json（项目配置文件）
+    """
+    # 优先从 LoRA 目录读取（保证与训练一致）
+    if lora_path:
+        lora_config = Path(lora_path) / "config_chat.json"
+        if lora_config.exists():
+            with open(lora_config, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            prompt = config.get("system_prompt", "")
+            if prompt:
+                print(f"已从 {lora_config} 加载 system prompt")
+                return prompt
+
+    # 回退到项目配置文件
+    for path in CONFIG_SEARCH_PATHS:
+        p = Path(path)
+        if p.exists():
+            with open(p, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            prompt = config.get("system_prompt", "")
+            if prompt:
+                print(f"已从 {p} 加载 system prompt")
+                return prompt
+
+    return None
 
 
 def load_transformers_model(model_path: str, lora_path: str = None):
@@ -197,7 +235,12 @@ def main():
         "--system-prompt", "-s",
         type=str,
         default=None,
-        help="系统提示词"
+        help="系统提示词（覆盖配置文件中的设置）"
+    )
+    parser.add_argument(
+        "--no-system-prompt",
+        action="store_true",
+        help="禁用自动加载 system prompt"
     )
     parser.add_argument(
         "--gguf",
@@ -208,16 +251,29 @@ def main():
 
     args = parser.parse_args()
 
+    # 确定 system prompt：命令行参数 > 配置文件 > 无
+    if args.system_prompt:
+        system_prompt = args.system_prompt
+    elif args.no_system_prompt:
+        system_prompt = None
+    else:
+        system_prompt = load_system_prompt(args.lora)
+
+    if system_prompt:
+        print(f"System prompt: {system_prompt}")
+    else:
+        print("未使用 system prompt")
+
     # 根据后端加载模型
     if args.backend == "transformers":
         model, tokenizer = load_transformers_model(args.model, args.lora)
-        chat_loop(model, tokenizer, args.backend, args.system_prompt)
+        chat_loop(model, tokenizer, args.backend, system_prompt)
     else:
         if not args.gguf:
             print("错误：llama.cpp后端需要指定--gguf参数")
             sys.exit(1)
         model = load_llama_cpp_model(args.gguf)
-        chat_loop(model, None, args.backend, args.system_prompt)
+        chat_loop(model, None, args.backend, system_prompt)
 
 
 if __name__ == "__main__":
